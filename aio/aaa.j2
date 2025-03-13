@@ -1,0 +1,35 @@
+{# management/aaa.j2 #}
+!
+! AAA Configuration
+!
+aaa authentication login default group {{ aaa.authentication.login.group }} local
+aaa authorization exec default group {{ aaa.authorization.exec.group }} local
+aaa accounting commands all default start-stop group {{ aaa.accounting.commands.group }}
+
+{# management/tacacs.j2 #}
+!
+! TACACS+ Configuration
+!
+{% if tacacs.enabled %}
+tacacs-server host {{ tacacs.primary_server }}
+{% if tacacs.key %}
+tacacs-server key {{ tacacs.key }}
+{% endif %}
+{% for server in tacacs.secondary_servers %}
+tacacs-server host {{ server }}
+{% endfor %}
+aaa group server tacacs+ {{ tacacs.group_name }}
+{% for server in tacacs.servers %}
+   server {{ server }}
+{% endfor %}
+{% endif %}
+
+{# management/ssh.j2 #}
+!
+! Management SSH Configuration
+!
+management ssh
+   {% for key in ssh.keys %}
+   authentication-keys {{ key.username }} key {{ key.type }} {{ key.key }}
+   {% endfor %}
+   no shutdown
