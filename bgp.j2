@@ -1,0 +1,45 @@
+{# Arista BGP Peer Configuration Template #}
+{# Input variables:
+   - asn: Local BGP ASN
+   - peer_asn: Remote peer's ASN
+   - peer_ip: Remote peer's IP address
+   - description: Peer description
+   - peer_group: Optional peer group name
+   - timers_keepalive: BGP keepalive timer (default: 60)
+   - timers_holdtime: BGP hold timer (default: 180)
+   - update_source: Local update source interface
+   - max_prefixes: Maximum prefixes to accept from peer
+   - password: Optional MD5 authentication password
+#}
+
+router bgp {{ asn }}
+   {%- if peer_group %}
+   neighbor {{ peer_ip }} peer group {{ peer_group }}
+   {%- else %}
+   neighbor {{ peer_ip }} remote-as {{ peer_asn }}
+   {%- endif %}
+   
+   {%- if description %}
+   neighbor {{ peer_ip }} description {{ description }}
+   {%- endif %}
+   
+   {%- if update_source %}
+   neighbor {{ peer_ip }} update-source {{ update_source }}
+   {%- endif %}
+   
+   {%- if timers_keepalive and timers_holdtime %}
+   neighbor {{ peer_ip }} timers {{ timers_keepalive }} {{ timers_holdtime }}
+   {%- endif %}
+   
+   {%- if max_prefixes %}
+   neighbor {{ peer_ip }} maximum-routes {{ max_prefixes }}
+   {%- endif %}
+   
+   {%- if password %}
+   neighbor {{ peer_ip }} password {{ password }}
+   {%- endif %}
+   
+   neighbor {{ peer_ip }} send-community standard extended
+   neighbor {{ peer_ip }} shutdown
+   
+   ! Remove shutdown when ready to enable
