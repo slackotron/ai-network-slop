@@ -1,0 +1,93 @@
+---
+# validate_ports.yml
+- name: Validate ports before configuration
+  hosts: all
+  gather_facts: no
+  
+  vars:
+    target_ports: []
+    min_uptime_hours: 24  # Minimum uptime to consider port as actively used
+    force_check: false    # Set to true to force validation even for admin-down ports
+    
+  tasks:
+    - name: Read switch configuration file
+      include_vars:
+        file: "{{ config_dir | default('configs') }}/{{ inventory_hostname }}_ports.yml"
+        name: switch_config
+      when: target_ports | length == 0
+
+    - name: Set ports to validate
+      set_fact:
+        ports_to_validate: "{{ target_ports | default(switch_config.ports) }}"
+
+    - name: Gather interface facts
+      eos_facts:
+        gather_subset: 
+          - interfaces
+      register: interface_facts
+
+    - name: Get detailed interface status
+      eos_command:
+        commands:
+          - show interfaces | json
+          - show lldp neighbors | json
+          - show port-security interface | json
+      register: interface_details
+
+    - name: Parse interface details
+      set_fact:
+        interfaces: "{{ interface_details.stdout[0] | from_json }}"
+        lldp_neighbors: "{{ interface_details.stdout[1] | from_json }}"
+        port_security: "{{ interface_details.stdout[2] | from_json }}"
+
+    - name: Validate each port
+      loop: "{{ ports_to_validate }}"
+      register: validation_results
+      vars:
+        int_name: "{{ item.name }}"
+        int_facts: "{{ interfaces.interfaces[int_name] | default({}) }}"
+        lldp_info: "{{ lldp_neighbors.lldpNeighbors | selectattr('port', 'equalto', int_name) | list }}"
+      block:
+        - name: Check interface status
+          fail:
+            msg: "VALIDATION FAILED for {{ int_name }}:{{ detail }}"
+          when: condition is true
+          vars:
+            conditions:
+              - desc: "Port is up and has been active for more than {{ min_uptime_hours }} hours"
+                detail: "Port appears to be in use (uptime: {{ int_facts.interfaceCounters.lastStatusChangeTimestamp }})"
+                condition: >
+                  int_facts.interfaceStatus == "up" and 
+                  (int_facts.interfaceCounters.lastStatusChangeTimestamp | int > min_uptime_hours * 3600) and
+                  not force_check|bool
+
+              - desc: "LLDP neighbor detected"
+                detail: "Active LLDP neighbor detected: {{ lldp_info[0].neighborDevice if lldp_info else '' }}"
+                condition: >
+                  lldp_info | length > 0 and
+                  not force_check|bool
+
+              - desc: "Port-security violation"
+                detail: "Port-security is configured with active MACs"
+                condition: >
+                  port_security[int_name] is defined and
+                  port_security[int_name].securePortConfig.violationCount > 0
+
+              - desc: "Traffic detected"
+                detail: "Recent traffic detected on port (input rate: {{ int_facts.interfaceCounters.inBitsRate }}, output rate: {{ int_facts.interfaceCounters.outBitsRate }})"
+                condition: >
+                  int_facts.interfaceCounters.inBitsRate > 0 or
+                  int_facts.interfaceCounters.outBitsRate > 0
+          ignore_errors: yes
+
+    - name: Summarize validation results
+      debug:
+        msg: 
+          - "Validation completed for {{ inventory_hostname }}"
+          - "Failed validations: {{ validation_results.results | selectattr('failed', 'true') | map(attribute='msg') | list }}"
+          - "Safe to proceed: {{ validation_results.results | selectattr('failed', 'true') | list | length == 0 }}"
+
+    - name: Fail if any validations failed
+      fail:
+        msg: "Port validation failed. Review results above."
+      when: validation_results.results | selectattr('failed', 'true') | list | length > 0
