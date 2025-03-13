@@ -1,0 +1,15 @@
+{# base/hostname.j2 #}
+!
+! Hostname Configuration
+!
+hostname {{ hostname }}
+
+{# base/banner.j2 #}
+!
+! Banner Configuration
+!
+{% if banner %}
+banner login
+{{ banner }}
+EOF
+{% endif %}
