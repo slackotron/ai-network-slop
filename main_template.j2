@@ -1,0 +1,100 @@
+{# master.j2 #}
+!
+! Generated configuration for {{ hostname }}
+! Role: {{ switch_role }}
+!
+hostname {{ hostname }}
+!
+service routing protocols model multi-agent
+!
+{% if timezone is defined %}
+clock timezone {{ timezone }}
+!
+{% endif %}
+
+{# Basic system settings #}
+spanning-tree mode {{ spanning_tree_mode | default('mstp') }}
+!
+{% if switch_role == 'leaf' %}
+spanning-tree portfast bpduguard default
+spanning-tree vlan-id 1-4094 priority {{ spine_bridge_priority | default('32768') }}
+{% endif %}
+
+{# Include management interface and VRF #}
+{% include 'management.j2' %}
+
+{# Include authentication config #}
+{% include 'authentication.j2' %}
+
+{# Include monitoring services #}
+{% include 'logging.j2' %}
+{% include 'ntp.j2' %}
+{% include 'snmp.j2' %}
+
+{# Include VLANs if defined #}
+{% if vlans is defined %}
+{% include 'vlans.j2' %}
+{% endif %}
+
+{# Include MLAG if defined #}
+{% if mlag is defined and switch_role == 'leaf' %}
+{% include 'mlag.j2' %}
+{% endif %}
+
+{# Include prefix-lists and route-maps #}
+{% if prefix_lists is defined or route_maps is defined %}
+{% include 'prefix_lists.j2' %}
+{% include 'route_maps.j2' %}
+{% endif %}
+
+{# Include L2 interfaces if this is an L2 switch or leaf #}
+{% if l2_interfaces is defined and (switch_role == 'leaf' or switch_role == 'l2') %}
+{% include 'l2_interfaces.j2' %}
+{% endif %}
+
+{# Include L3 interfaces if this is an L3 switch, leaf, or spine #}
+{% if l3_interfaces is defined and (switch_role in ['leaf', 'spine', 'l3']) %}
+{% include 'l3_interfaces.j2' %}
+{% endif %}
+
+{# Include routing protocols based on role #}
+{% if switch_role in ['leaf', 'spine', 'l3'] %}
+{% if ospf is defined %}
+{% include 'ospf.j2' %}
+{% endif %}
+
+{% if bgp is defined %}
+{% include 'bgp.j2' %}
+{% endif %}
+{% endif %}
+
+{# End of configuration #}
+!
+end
+
+# Example YAML for master config:
+---
+hostname: DC1-LEAF1
+switch_role: leaf  # Options: leaf, spine, l2, l3
+timezone: US/Pacific
+spanning_tree_mode: mstp
+
+# Include the relevant sections from previous YAML examples:
+mgmt_interface:
+  number: 1
+  vrf: MGMT
+  ip_address: 10.10.10.10/24
+
+tacacs:
+  server: 10.10.20.10
+  vrf: MGMT
+  key: tacacs_key_here
+
+# Import all other sections as needed:
+# - vlans
+# - l2_interfaces
+# - l3_interfaces
+# - mlag
+# - ospf
+# - bgp
+# etc...
