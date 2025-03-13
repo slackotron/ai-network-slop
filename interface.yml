@@ -1,0 +1,13 @@
+interfaces:
+  - name: Ethernet1
+    description: Server1
+    mode: access
+    vlan: 100
+    portfast: true
+    bpduguard: true
+
+  - name: Ethernet2
+    description: Uplink
+    mode: trunk
+    native_vlan: 1
+    allowed_vlans: 1-4094
