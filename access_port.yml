@@ -1,0 +1,87 @@
+---
+- name: Configure Unused Arista Switch Ports
+  hosts: arista_switches
+  gather_facts: no
+  connection: network_cli
+
+  vars:
+    ansible_network_os: eos
+    interface: "Ethernet1"  # Change this to your target interface
+    vlan_id: "10"          # Change this to your desired VLAN
+    check_minutes: "10"    # Time window to check for traffic (in minutes)
+
+  tasks:
+    - name: Get interface status
+      eos_command:
+        commands:
+          - show interfaces {{ interface }} | include "port is"
+      register: interface_status
+
+    - name: Check if interface is administratively down
+      set_fact:
+        is_admin_down: "{{ 'administratively down' in interface_status.stdout[0] }}"
+
+    - name: Get interface traffic statistics
+      eos_command:
+        commands:
+          - show interfaces {{ interface }} | include "input rate|output rate"
+      register: interface_traffic
+      when: not is_admin_down
+
+    - name: Check recent MAC address entries
+      eos_command:
+        commands:
+          - show mac address-table interface {{ interface }} | include dynamic
+      register: mac_entries
+      when: not is_admin_down
+
+    - name: Set port usage status
+      set_fact:
+        port_in_use: false
+      
+    - name: Check if port is in use based on traffic
+      set_fact:
+        port_in_use: true
+      when: >
+        not is_admin_down and
+        (interface_traffic.stdout[0] | regex_search('rate [1-9][0-9]* ') or
+         mac_entries.stdout[0] | length > 0)
+
+    - name: Display port status
+      debug:
+        msg: "Port {{ interface }} is {{ 'in use' if port_in_use else 'not in use' }}"
+
+    - name: Configure port as access port
+      when: not port_in_use
+      block:
+        - name: Shut down interface before configuration
+          eos_config:
+            lines:
+              - shutdown
+            parents: interface {{ interface }}
+          
+        - name: Configure interface as access port
+          eos_config:
+            lines:
+              - switchport mode access
+              - switchport access vlan {{ vlan_id }}
+              - spanning-tree portfast
+              - spanning-tree bpduguard enable
+              - no shutdown
+            parents: interface {{ interface }}
+          
+        - name: Save configuration
+          eos_config:
+            save_when: modified
+
+    - name: Show final configuration
+      eos_command:
+        commands:
+          - show running-config interfaces {{ interface }}
+      register: final_config
+      when: not port_in_use
+
+    - name: Display final configuration
+      debug:
+        var: final_config.stdout_lines
+      when: not port_in_use
