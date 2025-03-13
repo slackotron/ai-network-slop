@@ -1,0 +1,80 @@
+---
+- name: Validate SNMP Configuration on Arista Switches
+  hosts: arista_switches
+  gather_facts: no
+  connection: network_cli
+  
+  vars:
+    ansible_network_os: eos
+    snmp_communities:
+      - name: public
+        access: ro
+      - name: private
+        access: rw
+    snmp_locations:
+      - "Data Center 1"
+    snmp_contacts:
+      - "admin@example.com"
+    expected_trap_hosts:
+      - host: "10.1.1.100"
+        version: 2c
+        community: public
+      - host: "10.1.1.101"
+        version: 2c
+        community: public
+
+  tasks:
+    - name: Gather SNMP configuration
+      eos_command:
+        commands:
+          - show running-config | include snmp
+      register: snmp_config
+
+    - name: Validate SNMP communities
+      assert:
+        that:
+          - "'snmp-server community {{ item.name }} {{ item.access }}' in snmp_config.stdout[0]"
+        fail_msg: "SNMP community {{ item.name }} with {{ item.access }} access is not configured correctly"
+        success_msg: "SNMP community {{ item.name }} is properly configured"
+      loop: "{{ snmp_communities }}"
+
+    - name: Validate SNMP location
+      assert:
+        that:
+          - "'snmp-server location \"{{ item }}\"' in snmp_config.stdout[0]"
+        fail_msg: "SNMP location {{ item }} is not configured"
+        success_msg: "SNMP location is properly configured"
+      loop: "{{ snmp_locations }}"
+
+    - name: Validate SNMP contact
+      assert:
+        that:
+          - "'snmp-server contact {{ item }}' in snmp_config.stdout[0]"
+        fail_msg: "SNMP contact {{ item }} is not configured"
+        success_msg: "SNMP contact is properly configured"
+      loop: "{{ snmp_contacts }}"
+
+    - name: Validate SNMP trap hosts
+      assert:
+        that:
+          - "'snmp-server host {{ item.host }} version {{ item.version }} {{ item.community }}' in snmp_config.stdout[0]"
+        fail_msg: "SNMP trap host {{ item.host }} is not configured correctly"
+        success_msg: "SNMP trap host {{ item.host }} is properly configured"
+      loop: "{{ expected_trap_hosts }}"
+
+    - name: Verify SNMP agent is running
+      eos_command:
+        commands:
+          - show snmp
+      register: snmp_status
+      failed_when: "'SNMP agent enabled' not in snmp_status.stdout[0]"
+
+    - name: Generate validation report
+      debug:
+        msg:
+          - "SNMP Configuration Validation Report"
+          - "--------------------------------"
+          - "Communities configured: {{ snmp_communities | length }}"
+          - "Location configured: {{ snmp_locations | join(', ') }}"
+          - "Contact configured: {{ snmp_contacts | join(', ') }}"
+          - "Trap hosts configured: {{ expected_trap_hosts | length }}"
