@@ -1,0 +1,130 @@
+{# evpn.j2 #}
+{% if evpn is defined %}
+router bgp {{ bgp.as }}
+   router-id {{ bgp.router_id }}
+   {% if bgp.peer_groups is defined %}
+   {% for peer_group in bgp.peer_groups %}
+   peer-group {{ peer_group.name }}
+      remote-as {{ peer_group.remote_as }}
+      update-source {{ peer_group.update_source | default('Loopback0') }}
+      ebgp-multihop {{ peer_group.ebgp_multihop | default(3) }}
+      send-community extended
+   {% endfor %}
+   {% endif %}
+
+   {% if bgp.evpn_peers is defined %}
+   {% for peer in bgp.evpn_peers %}
+   neighbor {{ peer.ip }} peer-group {{ peer.peer_group }}
+   {% endfor %}
+   {% endif %}
+
+   address-family evpn
+      {% for peer_group in bgp.peer_groups %}
+      neighbor {{ peer_group.name }} activate
+      {% endfor %}
+!
+{% endif %}
+
+{# vxlan.j2 #}
+{% if vxlan is defined %}
+interface Vxlan1
+   vxlan source-interface {{ vxlan.source_interface | default('Loopback1') }}
+   vxlan udp-port {{ vxlan.udp_port | default(4789) }}
+   {% if vxlan.flood_list is defined %}
+   vxlan flood vtep {{ vxlan.flood_list | join(' ') }}
+   {% endif %}
+   {% for vlan in vxlan.vlans %}
+   vxlan vlan {{ vlan.id }} vni {{ vlan.vni }}
+   {% endfor %}
+   {% if vxlan.vrfs is defined %}
+   {% for vrf in vxlan.vrfs %}
+   vxlan vrf {{ vrf.name }} vni {{ vrf.vni }}
+   {% endfor %}
+   {% endif %}
+!
+{% endif %}
+
+{# l2evpn.j2 #}
+{% if evpn.l2 is defined %}
+{% for vlan in evpn.l2.vlans %}
+vlan {{ vlan.id }}
+   rd {{ evpn.rd_prefix }}:{{ vlan.id }}
+   route-target both {{ evpn.rt_prefix }}:{{ vlan.id }}
+!
+{% endfor %}
+{% endif %}
+
+{# l3evpn.j2 #}
+{% if evpn.l3 is defined %}
+{% for vrf in evpn.l3.vrfs %}
+vrf instance {{ vrf.name }}
+!
+ip routing vrf {{ vrf.name }}
+!
+router bgp {{ bgp.as }}
+   vrf {{ vrf.name }}
+      rd {{ evpn.rd_prefix }}:{{ vrf.vni }}
+      route-target import evpn {{ evpn.rt_prefix }}:{{ vrf.vni }}
+      route-target export evpn {{ evpn.rt_prefix }}:{{ vrf.vni }}
+      {% if vrf.redistribute is defined %}
+      {% for protocol in vrf.redistribute %}
+      redistribute {{ protocol }}
+      {% endfor %}
+      {% endif %}
+!
+{% endfor %}
+{% endif %}
+
+# Example YAML structure:
+---
+bgp:
+  as: 65101
+  router_id: 10.0.0.1
+  peer_groups:
+    - name: EVPN-SPINE-PEERS
+      remote_as: 65100
+      update_source: Loopback0
+      ebgp_multihop: 3
+  evpn_peers:
+    - ip: 10.0.0.101
+      peer_group: EVPN-SPINE-PEERS
+    - ip: 10.0.0.102
+      peer_group: EVPN-SPINE-PEERS
+
+evpn:
+  rd_prefix: "10.0.0.1"
+  rt_prefix: "65100"
+  l2:
+    vlans:
+      - id: 110
+        vni: 10110
+      - id: 120
+        vni: 10120
+  l3:
+    vrfs:
+      - name: PROD
+        vni: 50001
+        redistribute:
+          - connected
+          - static
+      - name: DEV
+        vni: 50002
+        redistribute:
+          - connected
+
+vxlan:
+  source_interface: Loopback1
+  udp_port: 4789
+  flood_list:
+    - 10.0.1.1
+    - 10.0.1.2
+  vlans:
+    - id: 110
+      vni: 10110
+    - id: 120
+      vni: 10120
+  vrfs:
+    - name: PROD
+      vni: 50001
+    - name: DEV
+      vni: 50002
