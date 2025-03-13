@@ -1,0 +1,54 @@
+# Device base information
+hostname: DC1-LEAF1
+mgmt_interface:
+  number: 1
+  description: Management
+  vrf: MGMT
+  ip_address: 10.10.10.10/24
+
+# Authentication
+tacacs:
+  server: 10.10.20.10
+  vrf: MGMT
+  key: tacacs_key_here
+  group: TACACS
+
+local_users:
+  - name: admin
+    privilege: 15
+    secret: admin_secret_here
+  - name: operator
+    privilege: 7
+    secret: operator_secret_here
+
+# Logging
+syslog:
+  vrf: MGMT
+  servers:
+    - 10.10.20.20
+    - 10.10.20.21
+  level: informational
+  source_interface: Management1
+
+# NTP
+ntp:
+  vrf: MGMT
+  auth_key: ntp_key_here
+  servers:
+    - 10.10.20.30
+    - 10.10.20.31
+
+# SNMP
+snmp:
+  vrf: MGMT
+  source_interface: Management1
+  communities:
+    - name: public_ro
+      access: ro
+    - name: private_rw
+      access: rw
+  hosts:
+    - address: 10.10.20.40
+      community: public_ro
+    - address: 10.10.20.41
+      community: private_rw
