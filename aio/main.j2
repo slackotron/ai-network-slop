@@ -1,0 +1,27 @@
+!
+! Arista Switch Configuration
+! Generated: {{ timestamp }}
+!
+
+{# Include base system configuration #}
+{% include 'base/hostname.j2' %}
+{% include 'base/banner.j2' %}
+
+{# Include network configuration #}
+{% include 'network/vlans.j2' %}
+{% include 'network/interfaces.j2' %}
+{% include 'network/routing.j2' %}
+
+{# Include management configuration #}
+{% include 'management/aaa.j2' %}
+{% include 'management/tacacs.j2' %}
+{% include 'management/ssh.j2' %}
+
+{# Include monitoring configuration #}
+{% include 'monitoring/logging.j2' %}
+{% include 'monitoring/snmp.j2' %}
+{% include 'monitoring/ntp.j2' %}
+
+!
+! End of Configuration
+!
