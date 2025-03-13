@@ -1,0 +1,35 @@
+{# monitoring/logging.j2 #}
+!
+! Logging Configuration
+!
+{% if logging.enabled %}
+logging buffered {{ logging.buffer_size }}
+logging console {{ logging.console_level }}
+{% for host in logging.hosts %}
+logging host {{ host.ip }} {{ host.port }}
+{% endfor %}
+{% endif %}
+
+{# monitoring/snmp.j2 #}
+!
+! SNMP Configuration
+!
+{% if snmp.enabled %}
+snmp-server community {{ snmp.community }} ro
+{% for host in snmp.hosts %}
+snmp-server host {{ host.ip }} version {{ host.version }} {{ host.community }}
+{% endfor %}
+snmp-server location "{{ snmp.location }}"
+snmp-server contact "{{ snmp.contact }}"
+{% endif %}
+
+{# monitoring/ntp.j2 #}
+!
+! NTP Configuration
+!
+{% if ntp.enabled %}
+ntp server {{ ntp.primary_server }} prefer
+{% for server in ntp.secondary_servers %}
+ntp server {{ server }}
+{% endfor %}
+{% endif %}
