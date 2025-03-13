@@ -1,0 +1,73 @@
+{# management.j2 #}
+{% if mgmt_interface is defined %}
+management api http-commands
+   no shutdown
+!
+interface Management {{ mgmt_interface.number }}
+   description {{ mgmt_interface.description | default('Management') }}
+   vrf {{ mgmt_interface.vrf | default('MGMT') }}
+   ip address {{ mgmt_interface.ip_address }}
+!
+{% if mgmt_interface.vrf is defined %}
+vrf instance {{ mgmt_interface.vrf }}
+!
+ip routing vrf {{ mgmt_interface.vrf }}
+!
+{% endif %}
+{% endif %}
+
+{# authentication.j2 #}
+{% if tacacs is defined %}
+tacacs-server host {{ tacacs.server }} vrf {{ tacacs.vrf | default('MGMT') }}
+   key {{ tacacs.key }}
+!
+aaa group server tacacs+ {{ tacacs.group | default('TACACS') }}
+   server {{ tacacs.server }}
+   vrf {{ tacacs.vrf | default('MGMT') }}
+!
+aaa authentication login default group {{ tacacs.group | default('TACACS') }} local
+aaa authorization exec default group {{ tacacs.group | default('TACACS') }} local
+!
+{% endif %}
+
+{% if local_users is defined %}
+{% for user in local_users %}
+username {{ user.name }} privilege {{ user.privilege | default(15) }} secret {{ user.secret }}
+{% endfor %}
+!
+{% endif %}
+
+{# logging.j2 #}
+{% if syslog is defined %}
+logging vrf {{ syslog.vrf | default('MGMT') }}
+{% for server in syslog.servers %}
+logging host {{ server }}
+{% endfor %}
+logging trap {{ syslog.level | default('informational') }}
+logging source-interface {{ syslog.source_interface | default('Management1') }}
+!
+{% endif %}
+
+{# ntp.j2 #}
+{% if ntp is defined %}
+ntp authentication-key 1 md5 {{ ntp.auth_key }}
+ntp trusted-key 1
+ntp authenticate
+{% for server in ntp.servers %}
+ntp server vrf {{ ntp.vrf | default('MGMT') }} {{ server }} key 1
+{% endfor %}
+!
+{% endif %}
+
+{# snmp.j2 #}
+{% if snmp is defined %}
+snmp-server vrf {{ snmp.vrf | default('MGMT') }}
+{% for community in snmp.communities %}
+snmp-server community {{ community.name }} {{ community.access | default('ro') }}
+{% endfor %}
+{% for host in snmp.hosts %}
+snmp-server host {{ host.address }} vrf {{ snmp.vrf | default('MGMT') }} version 2c {{ host.community }}
+{% endfor %}
+snmp-server source-interface {{ snmp.source_interface | default('Management1') }}
+!
+{% endif %}
