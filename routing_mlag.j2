@@ -1,0 +1,204 @@
+{# prefix_lists.j2 #}
+{% if prefix_lists is defined %}
+{% for list in prefix_lists %}
+ip prefix-list {{ list.name }}
+{% for entry in list.entries %}
+   seq {{ entry.seq }} {{ entry.action }} {{ entry.prefix }}{% if entry.ge is defined %} ge {{ entry.ge }}{% endif %}{% if entry.le is defined %} le {{ entry.le }}{% endif %}
+{% endfor %}
+!
+{% endfor %}
+{% endif %}
+
+{# route_maps.j2 #}
+{% if route_maps is defined %}
+{% for map in route_maps %}
+route-map {{ map.name }} {{ map.action }} {{ map.seq }}
+{% for entry in map.entries %}
+   {{ entry.type }} {{ entry.match }}
+{% endfor %}
+!
+{% endfor %}
+{% endif %}
+
+{# ospf.j2 #}
+{% if ospf is defined %}
+router ospf {{ ospf.process_id }}
+   router-id {{ ospf.router_id }}
+{% if ospf.reference_bandwidth is defined %}
+   auto-cost reference-bandwidth {{ ospf.reference_bandwidth }}
+{% endif %}
+{% if ospf.passive_interfaces is defined %}
+{% for interface in ospf.passive_interfaces %}
+   passive-interface {{ interface }}
+{% endfor %}
+{% endif %}
+{% if ospf.networks is defined %}
+{% for network in ospf.networks %}
+   network {{ network.prefix }} area {{ network.area }}
+{% endfor %}
+{% endif %}
+{% if ospf.redistribute is defined %}
+{% for redist in ospf.redistribute %}
+   redistribute {{ redist.protocol }} {% if redist.route_map is defined %}route-map {{ redist.route_map }}{% endif %}
+{% endfor %}
+{% endif %}
+!
+{% endif %}
+
+{# bgp.j2 #}
+{% if bgp is defined %}
+router bgp {{ bgp.as }}
+   router-id {{ bgp.router_id }}
+{% if bgp.maximum_paths is defined %}
+   maximum-paths {{ bgp.maximum_paths.ecmp }} ecmp {{ bgp.maximum_paths.multipath }}
+{% endif %}
+
+{% if bgp.peers is defined %}
+{% for peer in bgp.peers %}
+   neighbor {{ peer.ip }} remote-as {{ peer.remote_as }}
+{% if peer.description is defined %}
+   neighbor {{ peer.ip }} description {{ peer.description }}
+{% endif %}
+{% if peer.update_source is defined %}
+   neighbor {{ peer.ip }} update-source {{ peer.update_source }}
+{% endif %}
+{% if peer.peer_group is defined %}
+   neighbor {{ peer.ip }} peer-group {{ peer.peer_group }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if bgp.address_families is defined %}
+{% for family in bgp.address_families %}
+   address-family {{ family.type }}
+{% if family.networks is defined %}
+{% for network in family.networks %}
+      network {{ network }}
+{% endfor %}
+{% endif %}
+{% if family.redistribute is defined %}
+{% for redist in family.redistribute %}
+      redistribute {{ redist.protocol }} {% if redist.route_map is defined %}route-map {{ redist.route_map }}{% endif %}
+{% endfor %}
+{% endif %}
+{% for peer in family.peers %}
+      neighbor {{ peer.ip }} activate
+{% if peer.route_map_in is defined %}
+      neighbor {{ peer.ip }} route-map {{ peer.route_map_in }} in
+{% endif %}
+{% if peer.route_map_out is defined %}
+      neighbor {{ peer.ip }} route-map {{ peer.route_map_out }} out
+{% endif %}
+{% endfor %}
+   exit
+{% endfor %}
+{% endif %}
+!
+{% endif %}
+
+{# mlag.j2 #}
+{% if mlag is defined %}
+vlan {{ mlag.peer_vlan }}
+   name MLAG_PEER
+!
+interface Vlan{{ mlag.peer_vlan }}
+   description MLAG_PEER
+   ip address {{ mlag.local_ip }}/{{ mlag.peer_subnet }}
+   no autostate
+!
+{% for peer_link in mlag.peer_links %}
+interface {{ peer_link }}
+   description MLAG_PEER_LINK
+   channel-group {{ mlag.peer_link_po }} mode active
+!
+{% endfor %}
+interface Port-Channel{{ mlag.peer_link_po }}
+   description MLAG_PEER_LINK
+   switchport mode trunk
+   switchport trunk group mlagpeer
+!
+mlag configuration
+   domain-id {{ mlag.domain }}
+   local-interface Vlan{{ mlag.peer_vlan }}
+   peer-address {{ mlag.peer_ip }}
+   peer-link Port-Channel{{ mlag.peer_link_po }}
+{% if mlag.dual_primary is defined and mlag.dual_primary %}
+   dual-primary detection delay {{ mlag.dual_primary_delay | default(180) }} action errdisable all-interfaces
+{% endif %}
+!
+{% endif %}
+
+# Corresponding YAML structure:
+prefix_lists:
+  - name: CONNECTED_ROUTES
+    entries:
+      - seq: 10
+        action: permit
+        prefix: 10.0.0.0/24
+        ge: 24
+        le: 32
+
+route_maps:
+  - name: REDIST_CONNECTED
+    action: permit
+    seq: 10
+    entries:
+      - type: match
+        match: ip address prefix-list CONNECTED_ROUTES
+
+ospf:
+  process_id: 1
+  router_id: 10.0.0.1
+  reference_bandwidth: 100000
+  passive_interfaces:
+    - Vlan10
+    - Vlan20
+  networks:
+    - prefix: 10.0.0.0/24
+      area: 0
+  redistribute:
+    - protocol: connected
+      route_map: REDIST_CONNECTED
+
+bgp:
+  as: 65000
+  router_id: 10.0.0.1
+  maximum_paths:
+    ecmp: 4
+    multipath: 4
+  peers:
+    - ip: 10.0.1.1
+      remote_as: 65000
+      description: SPINE1
+      update_source: Loopback0
+    - ip: 10.0.1.2
+      remote_as: 65000
+      description: SPINE2
+      update_source: Loopback0
+  address_families:
+    - type: ipv4 unicast
+      networks:
+        - 10.0.0.1/32
+      redistribute:
+        - protocol: connected
+          route_map: REDIST_CONNECTED
+      peers:
+        - ip: 10.0.1.1
+          route_map_in: SPINE_IN
+          route_map_out: SPINE_OUT
+        - ip: 10.0.1.2
+          route_map_in: SPINE_IN
+          route_map_out: SPINE_OUT
+
+mlag:
+  peer_vlan: 4094
+  peer_link_po: 1000
+  domain: DC1_LEAF1_2
+  local_ip: 10.255.255.1
+  peer_ip: 10.255.255.2
+  peer_subnet: 30
+  peer_links:
+    - Ethernet15
+    - Ethernet16
+  dual_primary: true
+  dual_primary_delay: 180
