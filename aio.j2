@@ -1,0 +1,155 @@
+!
+! Hostname Configuration
+!
+hostname {{ hostname }}
+
+!
+! VLANs Configuration
+!
+{% for vlan in vlans %}
+vlan {{ vlan.id }}
+   name {{ vlan.name }}
+{% endfor %}
+
+!
+! Interface Configuration
+!
+{% for interface in interfaces %}
+interface {{ interface.name }}
+   description {{ interface.description }}
+   {% if interface.type == 'access' %}
+   switchport mode access
+   switchport access vlan {{ interface.vlan }}
+   {% elif interface.type == 'trunk' %}
+   switchport mode trunk
+   switchport trunk allowed vlan {{ interface.allowed_vlans|join(',') }}
+   {% elif interface.type == 'routed' %}
+   no switchport
+   ip address {{ interface.ip_address }}/{{ interface.prefix_length }}
+   {% endif %}
+   {% if interface.spanning_tree %}
+   spanning-tree portfast
+   spanning-tree bpduguard enable
+   {% endif %}
+   {% if interface.enabled %}
+   no shutdown
+   {% else %}
+   shutdown
+   {% endif %}
+{% endfor %}
+
+!
+! Management Interface
+!
+interface Management1
+   ip address {{ mgmt_ip }}/{{ mgmt_prefix_length }}
+   no shutdown
+
+!
+! Routing Protocol Configuration
+!
+{% if routing.ospf.enabled %}
+router ospf {{ routing.ospf.process_id }}
+   router-id {{ routing.ospf.router_id }}
+   {% for network in routing.ospf.networks %}
+   network {{ network.prefix }} area {{ network.area }}
+   {% endfor %}
+   {% for interface in routing.ospf.passive_interfaces %}
+   passive-interface {{ interface }}
+   {% endfor %}
+{% endif %}
+
+{% if routing.bgp.enabled %}
+router bgp {{ routing.bgp.as_number }}
+   router-id {{ routing.bgp.router_id }}
+   {% for neighbor in routing.bgp.neighbors %}
+   neighbor {{ neighbor.ip }} remote-as {{ neighbor.remote_as }}
+   {% if neighbor.description %}
+   neighbor {{ neighbor.ip }} description {{ neighbor.description }}
+   {% endif %}
+   {% endfor %}
+{% endif %}
+
+!
+! NTP Configuration
+!
+{% if ntp.enabled %}
+ntp server {{ ntp.primary_server }} prefer
+{% for server in ntp.secondary_servers %}
+ntp server {{ server }}
+{% endfor %}
+{% endif %}
+
+!
+! SNMP Configuration
+!
+{% if snmp.enabled %}
+snmp-server community {{ snmp.community }} ro
+{% for host in snmp.hosts %}
+snmp-server host {{ host.ip }} version {{ host.version }} {{ host.community }}
+{% endfor %}
+snmp-server location "{{ snmp.location }}"
+snmp-server contact "{{ snmp.contact }}"
+{% endif %}
+
+!
+! TACACS+ Configuration
+!
+{% if tacacs.enabled %}
+tacacs-server host {{ tacacs.primary_server }}
+{% if tacacs.key %}
+tacacs-server key {{ tacacs.key }}
+{% endif %}
+{% for server in tacacs.secondary_servers %}
+tacacs-server host {{ server }}
+{% endfor %}
+aaa group server tacacs+ {{ tacacs.group_name }}
+{% for server in tacacs.servers %}
+   server {{ server }}
+{% endfor %}
+{% endif %}
+
+!
+! AAA Configuration
+!
+aaa authentication login default group {{ aaa.authentication.login.group }} local
+aaa authorization exec default group {{ aaa.authorization.exec.group }} local
+aaa accounting commands all default start-stop group {{ aaa.accounting.commands.group }}
+
+!
+! Logging Configuration
+!
+{% if logging.enabled %}
+logging buffered {{ logging.buffer_size }}
+logging console {{ logging.console_level }}
+{% for host in logging.hosts %}
+logging host {{ host.ip }} {{ host.port }}
+{% endfor %}
+{% endif %}
+
+!
+! System Services
+!
+service routing protocols model multi-agent
+
+!
+! Management SSH Configuration
+!
+management ssh
+   {% for key in ssh.keys %}
+   authentication-keys {{ key.username }} key {{ key.type }} {{ key.key }}
+   {% endfor %}
+   no shutdown
+
+!
+! Banner Configuration
+!
+{% if banner %}
+banner login
+{{ banner }}
+EOF
+{% endif %}
+
+!
+! End of Configuration
+!
