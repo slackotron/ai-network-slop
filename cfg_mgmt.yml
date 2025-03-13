@@ -1,0 +1,96 @@
+# site.yml - Main playbook
+---
+- name: Configure Arista switches
+  hosts: "{{ target_hosts | default('all') }}"
+  gather_facts: no
+  
+  vars:
+    config_session: "ansible_{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    backup_dir: "./backups"
+  
+  tasks:
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}/{{ inventory_hostname }}"
+        state: directory
+      delegate_to: localhost
+
+    - name: Get running config
+      eos_command:
+        commands: show running-config
+      register: running_config
+      
+    - name: Backup current running config with timestamp
+      copy:
+        content: "{{ running_config.stdout[0] }}"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}/{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.conf"
+      delegate_to: localhost
+      
+    - name: Save symlink to latest backup
+      file:
+        src: "{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.conf"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}/latest.conf"
+        state: link
+      delegate_to: localhost
+
+    - name: Generate intended config
+      template:
+        src: "templates/master.j2"
+        dest: "configs/{{ inventory_hostname }}_intended.conf"
+      delegate_to: localhost
+      
+    - name: Generate config diff
+      command: >
+        diff -u 
+        "{{ backup_dir }}/{{ inventory_hostname }}/latest.conf"
+        configs/{{ inventory_hostname }}_intended.conf
+      register: config_diff
+      delegate_to: localhost
+      failed_when: false
+      changed_when: false
+      
+    - name: Display config differences
+      debug:
+        msg: "{{ config_diff.stdout_lines }}"
+      when: config_diff.stdout != ""
+      
+    - name: Confirm configuration application
+      pause:
+        prompt: "Review the changes above. Press Enter to apply, Ctrl+C to abort"
+      when: config_diff.stdout != ""
+      
+    - name: Apply configuration in session
+      eos_config:
+        src: "configs/{{ inventory_hostname }}_intended.conf"
+        save_when: modified
+      register: config_result
+      when: config_diff.stdout != ""
+
+# rollback.yml - Rollback playbook
+---
+- name: Rollback Arista configuration
+  hosts: "{{ target_hosts | default('all') }}"
+  gather_facts: no
+  
+  vars:
+    config_session: "rollback_{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    backup_dir: "./backups"
+  
+  tasks:
+    - name: Verify backup exists
+      stat:
+        path: "{{ backup_dir }}/{{ inventory_hostname }}/latest.conf"
+      register: backup_file
+      delegate_to: localhost
+      failed_when: not backup_file.stat.exists
+      
+    - name: Create rollback session
+      eos_config:
+        src: "{{ backup_dir }}/{{ inventory_hostname }}/latest.conf"
+        session: "{{ config_session }}"
+        
+    - name: Commit rollback
+      eos_config:
+        save_when: always
+
+# inventory.yml and other files remain the same...
