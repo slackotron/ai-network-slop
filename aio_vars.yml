@@ -1,0 +1,157 @@
+# Interface configurations
+vlans:
+  - id: 110
+    name: PROD_WEB
+  - id: 120
+    name: PROD_APP
+  - id: 130
+    name: PROD_DB
+  - id: 200
+    name: DEV_SERVERS
+  - id: 900
+    name: MLAG_PEER
+
+l2_interfaces:
+  - name: Ethernet1
+    description: PROD_WEB_SERVER1
+    mode: access
+    vlan: 110
+    portfast: true
+    bpduguard: true
+    
+  - name: Ethernet2
+    description: PROD_WEB_SERVER2
+    mode: access
+    vlan: 110
+    portfast: true
+    bpduguard: true
+    
+  - name: Ethernet3
+    description: TRUNK_TO_ACCESS_SWITCH
+    mode: trunk
+    native_vlan: 1
+    allowed_vlans: "110-130,200"
+    
+  - name: Port-Channel10
+    description: SERVER_LAG
+    mode: trunk
+    allowed_vlans: "110,120"
+    members:
+      - Ethernet10
+      - Ethernet11
+
+l3_interfaces:
+  - name: Ethernet49/1
+    description: P2P_SPINE1
+    ip_address: 10.10.101.1/31
+    mtu: 9214
+    ospf:
+      area: 0
+      network_type: point-to-point
+      
+  - name: Ethernet50/1
+    description: P2P_SPINE2
+    ip_address: 10.10.102.1/31
+    mtu: 9214
+    ospf:
+      area: 0
+      network_type: point-to-point
+      
+  - name: Vlan110
+    description: PROD_WEB_GW
+    ip_address: 10.1.10.1/24
+    vrf: PROD
+    
+  - name: Vlan120
+    description: PROD_APP_GW
+    ip_address: 10.1.20.1/24
+    vrf: PROD
+    
+  - name: Loopback0
+    description: ROUTER_ID
+    ip_address: 10.0.0.1/32
+    
+  - name: Loopback1
+    description: VTEP_SOURCE
+    ip_address: 10.0.1.1/32
+
+# Routing configurations
+ospf:
+  process_id: 1
+  router_id: 10.0.0.1
+  reference_bandwidth: 100000
+  passive_interfaces:
+    - Vlan110
+    - Vlan120
+    - Loopback0
+    - Loopback1
+  networks:
+    - prefix: 10.10.101.0/31
+      area: 0
+    - prefix: 10.10.102.0/31
+      area: 0
+    - prefix: 10.0.0.0/24
+      area: 0
+
+bgp:
+  as: 65101
+  router_id: 10.0.0.1
+  maximum_paths:
+    ecmp: 4
+    multipath: 4
+  peer_groups:
+    - name: SPINE_UNDERLAY
+      remote_as: 65100
+      description: P2P_LINKS_TO_SPINE
+      bfd: true
+      timers:
+        keepalive: 3
+        holdtime: 9
+    - name: SPINE_OVERLAY
+      remote_as: 65100
+      description: EVPN_SPINE_PEERS
+      update_source: Loopback0
+      ebgp_multihop: 3
+      send_community: all
+  
+  peers:
+    - ip: 10.10.101.0
+      peer_group: SPINE_UNDERLAY
+      description: SPINE1_UNDERLAY
+      
+    - ip: 10.10.102.0
+      peer_group: SPINE_UNDERLAY
+      description: SPINE2_UNDERLAY
+      
+    - ip: 10.0.0.101
+      peer_group: SPINE_OVERLAY
+      description: SPINE1_OVERLAY
+      
+    - ip: 10.0.0.102
+      peer_group: SPINE_OVERLAY
+      description: SPINE2_OVERLAY
+  
+  address_families:
+    - type: ipv4 unicast
+      redistribute:
+        - protocol: connected
+          route_map: CONNECTED_TO_BGP
+      peer_groups:
+        - name: SPINE_UNDERLAY
+          activate: true
+          
+    - type: evpn
+      peer_groups:
+        - name: SPINE_OVERLAY
+          activate: true
+      
+  vrfs:
+    - name: PROD
+      rd: "10.0.0.1:1"
+      route_targets:
+        import:
+          - "65100:1"
+        export:
+          - "65100:1"
+      redistribute:
+        - protocol: connected
