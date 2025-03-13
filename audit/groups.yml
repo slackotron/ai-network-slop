@@ -1,0 +1,11 @@
+---
+arista_switches:
+  username: admin
+  password: your_password
+  platform: eos
+  connection_options:
+    napalm:
+      extras:
+        optional_args:
+          transport: https
+          port: 443
