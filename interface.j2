@@ -1,0 +1,21 @@
+{# Interface configuration template for Arista switches #}
+{% for interface in interfaces %}
+interface {{ interface.name }}
+   description {{ interface.description | default('') }}
+   {% if interface.shutdown | default(false) %}shutdown{% else %}no shutdown{% endif %}
+   {% if interface.mode == 'access' %}
+   switchport mode access
+   switchport access vlan {{ interface.vlan }}
+   {% elif interface.mode == 'trunk' %}
+   switchport mode trunk
+   {% if interface.native_vlan is defined %}
+   switchport trunk native vlan {{ interface.native_vlan }}
+   {% endif %}
+   {% if interface.allowed_vlans is defined %}
+   switchport trunk allowed vlan {{ interface.allowed_vlans }}
+   {% endif %}
+   {% endif %}
+   {% if interface.portfast | default(false) %}spanning-tree portfast{% endif %}
+   {% if interface.bpduguard | default(false) %}spanning-tree bpduguard enable{% endif %}
+!
+{% endfor %}
