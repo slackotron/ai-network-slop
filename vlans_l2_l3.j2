@@ -1,0 +1,97 @@
+{# vlans.j2 #}
+{% if vlans is defined %}
+{% for vlan in vlans %}
+vlan {{ vlan.id }}
+   name {{ vlan.name }}
+{% endfor %}
+!
+{% endif %}
+
+{# l2_interfaces.j2 #}
+{% if l2_interfaces is defined %}
+{% for interface in l2_interfaces %}
+interface {{ interface.name }}
+   description {{ interface.description | default('') }}
+{% if interface.mode == 'access' %}
+   switchport access vlan {{ interface.vlan }}
+{% elif interface.mode == 'trunk' %}
+   switchport mode trunk
+{% if interface.native_vlan is defined %}
+   switchport trunk native vlan {{ interface.native_vlan }}
+{% endif %}
+{% if interface.allowed_vlans is defined %}
+   switchport trunk allowed vlan {{ interface.allowed_vlans }}
+{% endif %}
+{% endif %}
+{% if interface.portfast is defined and interface.portfast %}
+   spanning-tree portfast
+{% endif %}
+{% if interface.bpduguard is defined and interface.bpduguard %}
+   spanning-tree bpduguard enable
+{% endif %}
+!
+{% endfor %}
+{% endif %}
+
+{# l3_interfaces.j2 #}
+{% if l3_interfaces is defined %}
+{% for interface in l3_interfaces %}
+interface {{ interface.name }}
+   description {{ interface.description | default('') }}
+   no switchport
+   ip address {{ interface.ip_address }}
+{% if interface.vrf is defined %}
+   vrf {{ interface.vrf }}
+{% endif %}
+{% if interface.ospf is defined %}
+   ip ospf area {{ interface.ospf.area }}
+{% if interface.ospf.network_type is defined %}
+   ip ospf network {{ interface.ospf.network_type }}
+{% endif %}
+{% endif %}
+{% if interface.mtu is defined %}
+   mtu {{ interface.mtu }}
+{% endif %}
+!
+{% endfor %}
+{% endif %}
+
+# Corresponding YAML structure:
+vlans:
+  - id: 10
+    name: PROD_DATA
+  - id: 20
+    name: DEV_DATA
+  - id: 30
+    name: VOICE
+
+l2_interfaces:
+  - name: Ethernet1
+    description: Server1
+    mode: access
+    vlan: 10
+    portfast: true
+    bpduguard: true
+  
+  - name: Ethernet2
+    description: Uplink to Core
+    mode: trunk
+    native_vlan: 1
+    allowed_vlans: 10,20,30
+    
+l3_interfaces:
+  - name: Vlan10
+    description: PROD_DATA_Gateway
+    ip_address: 192.168.10.1/24
+    
+  - name: Ethernet10
+    description: Core Router Link
+    ip_address: 10.1.1.1/30
+    mtu: 9214
+    ospf:
+      area: 0
+      network_type: point-to-point
+
+  - name: Loopback0
+    description: Router ID
+    ip_address: 10.0.0.1/32
