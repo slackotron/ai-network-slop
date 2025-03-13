@@ -1,0 +1,72 @@
+{# network/vlans.j2 #}
+!
+! VLANs Configuration
+!
+{% for vlan in vlans %}
+vlan {{ vlan.id }}
+   name {{ vlan.name }}
+{% endfor %}
+
+{# network/interfaces.j2 #}
+!
+! Interface Configuration
+!
+{% for interface in interfaces %}
+interface {{ interface.name }}
+   description {{ interface.description }}
+   {% if interface.type == 'access' %}
+   switchport mode access
+   switchport access vlan {{ interface.vlan }}
+   {% elif interface.type == 'trunk' %}
+   switchport mode trunk
+   switchport trunk allowed vlan {{ interface.allowed_vlans|join(',') }}
+   {% elif interface.type == 'routed' %}
+   no switchport
+   ip address {{ interface.ip_address }}/{{ interface.prefix_length }}
+   {% endif %}
+   {% if interface.spanning_tree %}
+   spanning-tree portfast
+   spanning-tree bpduguard enable
+   {% endif %}
+   {% if interface.enabled %}
+   no shutdown
+   {% else %}
+   shutdown
+   {% endif %}
+{% endfor %}
+
+!
+! Management Interface
+!
+interface Management1
+   ip address {{ mgmt_ip }}/{{ mgmt_prefix_length }}
+   no shutdown
+
+{# network/routing.j2 #}
+!
+! Routing Protocol Configuration
+!
+{% if routing.ospf.enabled %}
+router ospf {{ routing.ospf.process_id }}
+   router-id {{ routing.ospf.router_id }}
+   {% for network in routing.ospf.networks %}
+   network {{ network.prefix }} area {{ network.area }}
+   {% endfor %}
+   {% for interface in routing.ospf.passive_interfaces %}
+   passive-interface {{ interface }}
+   {% endfor %}
+{% endif %}
+
+{% if routing.bgp.enabled %}
+router bgp {{ routing.bgp.as_number }}
+   router-id {{ routing.bgp.router_id }}
+   {% for neighbor in routing.bgp.neighbors %}
+   neighbor {{ neighbor.ip }} remote-as {{ neighbor.remote_as }}
+   {% if neighbor.description %}
+   neighbor {{ neighbor.ip }} description {{ neighbor.description }}
+   {% endif %}
+   {% endfor %}
+{% endif %}
+
+!
+service routing protocols model multi-agent
